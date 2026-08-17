@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import io
 
 # Configuración de la página
 st.set_page_config(page_title="Panel Nivel de Logro de Aprendizaje", layout="wide")
@@ -30,66 +31,68 @@ col_estudiante = next((c for c in columnas if 'ESTUDIANTE' in c.upper()), 'ESTUD
 df[col_nivel] = df[col_nivel].replace('EXO', 'A')
 df = df[df[col_nivel].isin(['AD', 'A', 'B', 'C'])]
 
-# Cabecera con imagen a 150x150
+# Cabecera
 col_logo, col_titulo = st.columns([1, 4])
 with col_logo:
     st.image("escudo.png", width=150)
 with col_titulo:
-    # NUEVO TÍTULO Y SUBTÍTULO
     st.title("Panel Nivel de Logro de Aprendizaje")
     st.subheader("I BIMESTRE")
     st.markdown("### IE Nº 20393 Túpac Amaru - Pampa Libre")
 
 st.divider()
 
-# Filtros
+# --- FILTROS DEPENDIENTES ---
 area = st.sidebar.selectbox("Área:", ["Todas"] + list(df[col_area].unique()))
 grado = st.sidebar.selectbox("Grado:", ["Todos"] + list(df[col_grado].unique()))
 seccion = st.sidebar.selectbox("Sección:", ["Todas"] + list(df[col_seccion].unique()))
 
+df_temp = df.copy()
+if area != "Todas":
+    df_temp = df_temp[df_temp[col_area] == area]
+if grado != "Todos":
+    df_temp = df_temp[df_temp[col_grado] == grado]
+if seccion != "Todas":
+    df_temp = df_temp[df_temp[col_seccion] == seccion]
+
 if col_comp:
-    competencias_lista = list(df[col_comp].unique())
+    competencias_lista = list(df_temp[col_comp].unique())
     competencias = st.sidebar.multiselect("Competencias:", competencias_lista, default=competencias_lista)
 else:
     competencias = []
 
-# Aplicar filtros
-df_filtrado = df.copy()
-if area != "Todas":
-    df_filtrado = df_filtrado[df_filtrado[col_area] == area]
-if grado != "Todos":
-    df_filtrado = df_filtrado[df_filtrado[col_grado] == grado]
-if seccion != "Todas":
-    df_filtrado = df_filtrado[df_filtrado[col_seccion] == seccion]
+df_filtrado = df_temp.copy()
 if len(competencias) > 0 and col_comp:
     df_filtrado = df_filtrado[df_filtrado[col_comp].isin(competencias)]
 
-# --- RESUMEN DEL NIVEL SEPARADO Y DETALLADO (ALINEADO) ---
+# --- RESUMEN DEL NIVEL SEPARADO Y DETALLADO (ALINEACIÓN CORREGIDA) ---
 st.markdown("### Resumen del NIVEL")
 
-# Creamos 5 columnas: La primera para Estudiantes Únicos y Áreas, las otras 4 para los datos
 col_nombres, c1, c2, c3, c4 = st.columns([1.5, 1, 1, 1, 1])
 
-# CONTEO EXACTO
 total_estudiantes_unicos = df_filtrado[col_estudiante].nunique()
-
 count_ad = len(df_filtrado[df_filtrado[col_nivel] == 'AD'])
 count_a = len(df_filtrado[df_filtrado[col_nivel] == 'A'])
 count_b = len(df_filtrado[df_filtrado[col_nivel] == 'B'])
 count_c = len(df_filtrado[df_filtrado[col_nivel] == 'C'])
 
-# Imprimimos las métricas principales
 col_nombres.metric("Estudiantes Únicos", total_estudiantes_unicos)
 c1.metric("Logro Destacado (AD)", count_ad)
 c2.metric("Logro Esperado (A)", count_a)
 c3.metric("En Proceso (B)", count_b)
 c4.metric("En Inicio (C)", count_c)
 
-# Título de la sección de desglose
-col_nombres.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-col_nombres.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #31333F; margin-bottom: 5px;'>ÁREA Y COMPETENCIA</div>", unsafe_allow_html=True)
+espacio_superior = "<div style='height: 15px;'></div>"
+titulo_visible = "<div style='font-size: 0.95rem; font-weight: 600; color: #31333F; margin-bottom: 5px;'>ÁREA Y COMPETENCIA</div>"
+titulo_invisible = "<div style='font-size: 0.95rem; margin-bottom: 5px;'>&nbsp;</div>"
 
-# Lógica para sincronizar las filas horizontalmente
+col_nombres.markdown(espacio_superior, unsafe_allow_html=True)
+col_nombres.markdown(titulo_visible, unsafe_allow_html=True)
+
+for col in [c1, c2, c3, c4]:
+    col.markdown(espacio_superior, unsafe_allow_html=True)
+    col.markdown(titulo_invisible, unsafe_allow_html=True)
+
 if col_comp and not df_filtrado.empty:
     competencias_presentes = sorted(df_filtrado[col_comp].dropna().unique())
     
@@ -127,7 +130,7 @@ if col_comp and not df_filtrado.empty:
 
 st.divider()
 
-# --- COLUMNA / SECCIÓN DE ESTUDIANTES QUE REQUIEREN APOYO ---
+# --- ESTUDIANTES QUE REQUIEREN APOYO ---
 st.markdown("#### Estudiantes que requieren apoyo (C)")
 df_apoyo = df_filtrado[df_filtrado[col_nivel] == 'C']
 
@@ -142,44 +145,127 @@ else:
 
 st.divider()
 
-# Gráfico y Tabla General
+# --- SECCIÓN DE GRÁFICOS ORGANIZADA EN PESTAÑAS ---
 st.markdown(f"**Visualizando Padrón General:** {area} | {grado} | {seccion}")
 
-conteo_notas = df_filtrado[col_nivel].value_counts().reset_index()
-conteo_notas.columns = ['NIVEL', 'CANTIDAD']
-
-colores_minedu = {
-    'AD': '#1f77b4',
-    'A': '#2ca02c', 
-    'B': '#ffcc00', 
-    'C': '#d62728'  
+# Diccionario de descripciones y colores oficiales del MINEDU
+descripciones = {
+    'AD': 'AD (Logro destacado)',
+    'A': 'A (Logro Esperado)',
+    'B': 'B (En Proceso)',
+    'C': 'C (En Inicio)'
 }
 
-grafico = alt.Chart(conteo_notas).mark_bar().encode(
-    x=alt.X('NIVEL', sort=['AD', 'A', 'B', 'C'], title='Nivel de Logro', axis=alt.Axis(labelAngle=0)),
-    y=alt.Y('CANTIDAD', title='Número de Estudiantes'),
-    color=alt.Color('NIVEL', scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), legend=None),
-    tooltip=['NIVEL', 'CANTIDAD']
-).properties(height=350)
+colores_minedu = {
+    'AD (Logro destacado)': '#1f77b4',
+    'A (Logro Esperado)': '#2ca02c', 
+    'B (En Proceso)': '#ffcc00', 
+    'C (En Inicio)': '#d62728'  
+}
 
-st.altair_chart(grafico, use_container_width=True)
+orden_niveles = ['AD (Logro destacado)', 'A (Logro Esperado)', 'B (En Proceso)', 'C (En Inicio)']
 
-# Tabla General
+# Creamos las pestañas principales
+tab_gen, tab_cant, tab_pct = st.tabs([
+    "📊 Gráfico General de Niveles", 
+    "📊 Cantidades por Competencia", 
+    "📈 Distribución Porcentual"
+])
+
+with tab_gen:
+    # Pestaña 1: Gráfico General Original
+    conteo_notas = df_filtrado[col_nivel].value_counts().reset_index()
+    conteo_notas.columns = ['NIVEL', 'CANTIDAD']
+    conteo_notas['LEYENDA'] = conteo_notas['NIVEL'].map(descripciones)
+
+    grafico_gen = alt.Chart(conteo_notas).mark_bar().encode(
+        x=alt.X('NIVEL', sort=['AD', 'A', 'B', 'C'], title='Nivel de Logro', axis=alt.Axis(labelAngle=0)),
+        y=alt.Y('CANTIDAD', title='Número de Estudiantes'),
+        color=alt.Color('LEYENDA', 
+                        scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), 
+                        sort=orden_niveles,
+                        legend=alt.Legend(title="Significado", orient="right")),
+        tooltip=['NIVEL', 'LEYENDA', 'CANTIDAD']
+    ).properties(height=350)
+
+    st.altair_chart(grafico_gen, use_container_width=True)
+
+with tab_cant:
+    # Pestaña 2: Barras Agrupadas con Cantidades Exactas
+    if not df_filtrado.empty and col_comp:
+        df_chart = df_filtrado.copy()
+        df_chart['COMP_SHORT'] = df_chart[col_comp].apply(lambda x: str(x).split('_')[-1] if '_' in str(x) else str(x))
+        chart_data = df_chart.groupby(['COMP_SHORT', col_nivel]).size().reset_index(name='CANTIDAD')
+        chart_data['LEYENDA'] = chart_data[col_nivel].map(descripciones)
+
+        bars = alt.Chart(chart_data).mark_bar().encode(
+            x=alt.X('COMP_SHORT:N', title='COMPETENCIA', axis=alt.Axis(labelAngle=0)),
+            y=alt.Y('CANTIDAD:Q', title='Cantidad'),
+            color=alt.Color('LEYENDA:N', 
+                            scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), 
+                            legend=alt.Legend(title="NIVEL DE LOGRO"),
+                            sort=orden_niveles),
+            xOffset=alt.XOffset('LEYENDA:N', sort=orden_niveles),
+            tooltip=['COMP_SHORT', 'LEYENDA', 'CANTIDAD']
+        )
+        
+        text = alt.Chart(chart_data).mark_text(
+            align='center',
+            baseline='bottom',
+            dy=-5,
+            fontWeight='bold'
+        ).encode(
+            x=alt.X('COMP_SHORT:N'),
+            y=alt.Y('CANTIDAD:Q'),
+            xOffset=alt.XOffset('LEYENDA:N', sort=orden_niveles),
+            text='CANTIDAD:Q'
+        )
+        
+        grafico_agrupado = (bars + text).properties(height=450)
+        st.altair_chart(grafico_agrupado, use_container_width=True)
+    else:
+        st.info("No hay datos disponibles para las competencias seleccionadas.")
+
+with tab_pct:
+    # Pestaña 3: Distribución Porcentual
+    if not df_filtrado.empty and col_comp:
+        df_chart = df_filtrado.copy()
+        df_chart['COMP_SHORT'] = df_chart[col_comp].apply(lambda x: str(x).split('_')[-1] if '_' in str(x) else str(x))
+        chart_data = df_chart.groupby(['COMP_SHORT', col_nivel]).size().reset_index(name='CANTIDAD')
+        chart_data['LEYENDA'] = chart_data[col_nivel].map(descripciones)
+
+        chart_data_pct = chart_data.copy()
+        chart_data_pct['TOTAL'] = chart_data_pct.groupby('COMP_SHORT')['CANTIDAD'].transform('sum')
+        chart_data_pct['PORCENTAJE'] = (chart_data_pct['CANTIDAD'] / chart_data_pct['TOTAL']) * 100
+        chart_data_pct['PORCENTAJE_TXT'] = chart_data_pct['PORCENTAJE'].round(1).astype(str) + '%'
+
+        bars_pct = alt.Chart(chart_data_pct).mark_bar().encode(
+            x=alt.X('COMP_SHORT:N', title='COMPETENCIA', axis=alt.Axis(labelAngle=0)),
+            y=alt.Y('PORCENTAJE:Q', title='Porcentaje (%)', stack="normalize", axis=alt.Axis(format='%')),
+            color=alt.Color('LEYENDA:N', 
+                            scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())),
+                            legend=alt.Legend(title="NIVEL DE LOGRO"),
+                            sort=orden_niveles),
+            tooltip=['COMP_SHORT', 'LEYENDA', 'CANTIDAD', 'PORCENTAJE_TXT']
+        ).properties(height=450)
+        
+        st.altair_chart(bars_pct, use_container_width=True)
+    else:
+        st.info("No hay datos disponibles para las competencias seleccionadas.")
+
 st.dataframe(df_filtrado.reset_index(drop=True), use_container_width=True)
 
-# Botón de Descarga
+# --- BOTÓN DE DESCARGA (SOLO EXCEL) ---
 st.divider()
 st.markdown("### Exportar Datos")
 
-@st.cache_data
-def convertir_df(df_a_convertir):
-    return df_a_convertir.to_csv(index=False).encode('utf-8')
-
-csv = convertir_df(df_filtrado)
+buffer = io.BytesIO()
+with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+    df_filtrado.to_excel(writer, index=False, sheet_name='Reporte_Filtrado')
 
 st.download_button(
-    label="📥 Descargar reporte filtrado (Excel/CSV)",
-    data=csv,
-    file_name='reporte_estudiantes_filtrado.csv',
-    mime='text/csv',
+    label="📥 Descargar reporte en Excel (.xlsx)",
+    data=buffer.getvalue(),
+    file_name='reporte_estudiantes_filtrado.xlsx',
+    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 )
