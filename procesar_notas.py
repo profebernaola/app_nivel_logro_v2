@@ -1,20 +1,18 @@
 import pandas as pd
+import os
 
-def procesar_excel_a_csv():
-    # Nombre de tu nuevo archivo consolidado
-    file_path = "CONSOLIDADO NIVEL DEL LOGRO DE LOS APRENDIZAJE - I BIMESTRE - 2026.xlsx"
-    
-    print(f"Leyendo el archivo: {file_path} ...")
-    
+def extraer_datos_excel(file_path, sheet_name, bimestre_label):
+    print(f"Procesando: {file_path} ...")
+    if not os.path.exists(file_path):
+        print(f"  -> ADVERTENCIA: No se encontró el archivo '{file_path}'. Saltando...")
+        return pd.DataFrame()
+        
     try:
-        # Leemos el archivo sin encabezados fijos para navegar por la estructura
-        df_raw = pd.read_excel(file_path, sheet_name='DATA_I_BIMESTRE_2026', header=None)
+        df_raw = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
     except Exception as e:
-        print(f"Error al leer el Excel. Verifica que el nombre sea exacto y esté en la misma carpeta.")
-        print(f"Detalle del error: {e}")
-        return
+        print(f"  -> Error al leer la hoja '{sheet_name}'. Detalle: {e}")
+        return pd.DataFrame()
 
-    # Extraer las Áreas (Fila 6 en Excel -> índice 5) y Competencias (Fila 7 -> índice 6)
     row5 = df_raw.iloc[5].tolist()
     row6 = df_raw.iloc[6].tolist()
 
@@ -24,38 +22,28 @@ def procesar_excel_a_csv():
         val5 = str(row5[i]).strip() if pd.notna(row5[i]) else ""
         val6 = str(row6[i]).strip() if pd.notna(row6[i]) else ""
         
-        # Identificar el Área
         if val5 and val5 not in ['ITEM', 'APELLIDOS Y NOMBRES', 'GRADO', 'SECCION', 'NIVEL DE LOGRO DE APRENDIZAJE']:
             current_area = val5
         
-        # Identificar la Competencia (C1, C2, C3 o C4)
         if val6 in ['C1', 'C2', 'C3', 'C4']:
             mapping.append({'col_index': i, 'area': current_area, 'comp': val6})
 
-    print(f"Se detectaron {len(mapping)} columnas de competencias.")
-
-    # Procesar las calificaciones desde la fila 8 (índice 7 en Python)
     data_rows = []
     for index, row in df_raw.iloc[7:].iterrows():
         estudiante = row[1]
         grado = row[2]
         seccion = row[3]
         
-        # Ignorar filas en blanco
         if pd.isna(estudiante) or str(estudiante).strip() == "":
             continue 
             
-        # Extraer nota por nota
         for m in mapping:
             nota = row[m['col_index']]
-            
-            # Si la celda tiene una nota...
             if pd.notna(nota) and str(nota).strip() != "":
-                area_clean = str(m['area']).replace("  ", " ").strip() # Limpieza de espacios extra
+                area_clean = str(m['area']).replace("  ", " ").strip()
                 comp_combined = f"{area_clean}_{m['comp']}"
                 nota_limpia = str(nota).strip().upper()
                 
-                # Filtrar solo notas válidas
                 if nota_limpia in ['AD', 'A', 'B', 'C', 'EXO']:
                     data_rows.append({
                         'ESTUDIANTE': str(estudiante).strip(),
@@ -63,18 +51,38 @@ def procesar_excel_a_csv():
                         'SECCION': str(seccion).strip(),
                         'AREA': area_clean,
                         'COMPETENCIA': comp_combined,
-                        'NIVEL_DE_LOGRO': nota_limpia
+                        'NIVEL_DE_LOGRO': nota_limpia,
+                        'BIMESTRE': bimestre_label # <-- ¡EL NUEVO DATO ESTRELLA!
                     })
+                    
+    return pd.DataFrame(data_rows)
 
-    # Convertir a formato tabla y generar el archivo
-    df_clean = pd.DataFrame(data_rows)
-    output_csv = "BD_Dashboard_IBimestre.csv"
+def procesar_excel_a_csv():
+    # 1. Configurar los dos archivos
+    file_1 = "CONSOLIDADO NIVEL DEL LOGRO DE LOS APRENDIZAJE - I BIMESTRE - 2026.xlsx"
+    sheet_1 = "DATA_I_BIMESTRE_2026"
     
-    # Usamos utf-8-sig para que Excel respete las tildes (como en COMUNICACIÓN)
-    df_clean.to_csv(output_csv, index=False, encoding='utf-8-sig')
+    file_2 = "CONSOLIDADO NIVEL DEL LOGRO DE LOS APRENDIZAJE - II BIMESTRE - 2026.xlsx"
+    sheet_2 = "DATA_II_BIMESTRE_2026"
     
-    print(f"\n¡Éxito! Se procesaron {len(df_clean)} calificaciones en total.")
-    print(f"El archivo '{output_csv}' ha sido actualizado y está listo para Streamlit.")
+    # 2. Extraer datos de ambos
+    df_bim1 = extraer_datos_excel(file_1, sheet_1, "I BIMESTRE")
+    df_bim2 = extraer_datos_excel(file_2, sheet_2, "II BIMESTRE")
+    
+    # 3. Unir todo en una sola super-tabla
+    df_final = pd.concat([df_bim1, df_bim2], ignore_index=True)
+    
+    if df_final.empty:
+        print("Error: No se procesó ningún dato. Verifica los nombres de tus archivos.")
+        return
+
+    # 4. Generar el nuevo archivo consolidado
+    output_csv = "BD_Dashboard_Consolidado.csv"
+    df_final.to_csv(output_csv, index=False, encoding='utf-8-sig')
+    
+    print(f"\n¡Éxito total! Se procesaron {len(df_final)} calificaciones uniendo ambos bimestres.")
+    print(f"Se ha creado el archivo maestro: '{output_csv}'")
 
 if __name__ == "__main__":
+    print("--- INICIANDO PROCESAMIENTO DE BIMESTRES ---")
     procesar_excel_a_csv()

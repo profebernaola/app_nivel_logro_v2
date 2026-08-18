@@ -5,17 +5,17 @@ import io
 
 # Configuración de la página
 st.set_page_config(page_title="Panel Nivel de Logro de Aprendizaje", layout="wide")
-st.sidebar.header("Filtros de Búsqueda")
 
 @st.cache_data
 def cargar_datos():
-    df = pd.read_csv("BD_Dashboard_IBimestre.csv")
+    # AHORA LEE EL NUEVO ARCHIVO CONSOLIDADO
+    df = pd.read_csv("BD_Dashboard_Consolidado.csv")
     return df
 
 try:
     df = cargar_datos()
 except FileNotFoundError:
-    st.error("No se encontró el archivo 'BD_Dashboard_IBimestre.csv'.")
+    st.error("No se encontró el archivo 'BD_Dashboard_Consolidado.csv'. Ejecuta procesar_notas.py primero.")
     st.stop()
 
 # Detección de columnas
@@ -26,39 +26,38 @@ col_seccion = next((c for c in columnas if c.upper() in ['SECCION', 'SECCIÓN'])
 col_comp = next((c for c in columnas if 'COMPETENCIA' in c.upper()), columnas[3] if len(columnas)>3 else None)
 col_nivel = next((c for c in columnas if 'NIVEL' in c.upper()), 'NIVEL_DE_LOGRO')
 col_estudiante = next((c for c in columnas if 'ESTUDIANTE' in c.upper()), 'ESTUDIANTE')
+col_bimestre = 'BIMESTRE' if 'BIMESTRE' in columnas else None
 
 # --- CORRECCIÓN DE EXO ---
-# Ya NO reemplazamos EXO por A. Aceptamos EXO como categoría oficial.
 df = df[df[col_nivel].isin(['AD', 'A', 'B', 'C', 'EXO'])]
 
-# Cabecera
-col_logo, col_titulo = st.columns([1, 4])
-with col_logo:
-    st.image("escudo.png", width=150)
-with col_titulo:
-    st.title("Panel Nivel de Logro de Aprendizaje")
-    st.subheader("I BIMESTRE")
-    st.markdown("### IE Nº 20393 Túpac Amaru - Pampa Libre")
-
-st.divider()
-
 # --- FILTROS DEPENDIENTES EN CASCADA ---
-# 1. Filtro de Área
-area = st.sidebar.selectbox("Área:", ["Todas"] + list(df[col_area].unique()))
+st.sidebar.header("Filtros de Búsqueda")
 df_temp = df.copy()
+
+# 0. Filtro de Bimestre (EL NUEVO FILTRO)
+if col_bimestre:
+    bimestres_disponibles = sorted(list(df_temp[col_bimestre].unique()))
+    bimestre_seleccionado = st.sidebar.selectbox("Bimestre:", ["Ambos (Comparativo)"] + bimestres_disponibles)
+    if bimestre_seleccionado != "Ambos (Comparativo)":
+        df_temp = df_temp[df_temp[col_bimestre] == bimestre_seleccionado]
+else:
+    bimestre_seleccionado = "I BIMESTRE"
+
+# 1. Filtro de Área
+area = st.sidebar.selectbox("Área:", ["Todas"] + list(df_temp[col_area].unique()))
 if area != "Todas":
     df_temp = df_temp[df_temp[col_area] == area]
 
-# 2. Filtro de Grado (Con orden lógico escolar)
+# 2. Filtro de Grado 
 orden_logico_grados = ['PRIMERO', 'SEGUNDO', 'TERCERO', 'CUARTO', 'QUINTO']
 grados_brutos = list(df_temp[col_grado].unique())
 grados_disponibles = sorted(grados_brutos, key=lambda x: orden_logico_grados.index(x) if x in orden_logico_grados else 999)
-
 grado = st.sidebar.selectbox("Grado:", ["Todos"] + grados_disponibles)
 if grado != "Todos":
     df_temp = df_temp[df_temp[col_grado] == grado]
 
-# 3. Filtro de Sección (Depende del Grado)
+# 3. Filtro de Sección 
 secciones_disponibles = sorted(list(df_temp[col_seccion].unique()))
 seccion = st.sidebar.selectbox("Sección:", ["Todas"] + secciones_disponibles)
 if seccion != "Todas":
@@ -75,10 +74,23 @@ df_filtrado = df_temp.copy()
 if len(competencias) > 0 and col_comp:
     df_filtrado = df_filtrado[df_filtrado[col_comp].isin(competencias)]
 
+# --- CABECERA DINÁMICA ---
+col_logo, col_titulo = st.columns([1, 4])
+with col_logo:
+    st.image("escudo.png", width=150)
+with col_titulo:
+    st.title("Panel Nivel de Logro de Aprendizaje")
+    if bimestre_seleccionado == "Ambos (Comparativo)":
+         st.subheader("I y II BIMESTRE (CONSOLIDADO)")
+    else:
+         st.subheader(bimestre_seleccionado)
+    st.markdown("### IE Nº 20393 Túpac Amaru - Pampa Libre")
+
+st.divider()
+
 # --- RESUMEN DEL NIVEL ---
 st.markdown("### Resumen del NIVEL")
 
-# Agregamos una columna más (c5) para los EXO
 col_nombres, c1, c2, c3, c4, c5 = st.columns([1.5, 1, 1, 1, 1, 1])
 
 total_estudiantes_unicos = df_filtrado[col_estudiante].nunique()
@@ -108,12 +120,10 @@ for col in [c1, c2, c3, c4, c5]:
 
 if col_comp and not df_filtrado.empty:
     competencias_presentes = sorted(df_filtrado[col_comp].dropna().unique())
-    
     html_nombres, html_ad, html_a, html_b, html_c, html_exo = "", "", "", "", "", ""
     
     for comp in competencias_presentes:
         df_comp = df_filtrado[df_filtrado[col_comp] == comp]
-        
         area_name = df_comp[col_area].iloc[0] if not df_comp.empty and col_area in df_comp.columns else "Área"
         comp_name = str(comp).split('_')[-1] if '_' in str(comp) else str(comp)
         
@@ -148,7 +158,7 @@ df_apoyo = df_filtrado[df_filtrado[col_nivel] == 'C']
 
 if not df_apoyo.empty:
     df_agrupado = df_apoyo.groupby(col_estudiante).agg({
-        col_comp: lambda x: ', '.join(x)
+        col_comp: lambda x: ', '.join(sorted(set(x)))
     }).reset_index()
     df_agrupado = df_agrupado.rename(columns={col_comp: 'COMPETENCIAS A MEJORAR'})
     st.dataframe(df_agrupado, hide_index=True, use_container_width=True)
@@ -159,47 +169,28 @@ st.divider()
 
 # --- ESTUDIANTES EXONERADOS (EXO) ---
 df_exo = df_filtrado[df_filtrado[col_nivel] == 'EXO']
-
-# Solo mostramos esta sección si hay estudiantes exonerados
 if not df_exo.empty:
     st.markdown("#### Estudiantes Exonerados (EXO)")
     df_exo_agrupado = df_exo.groupby(col_estudiante).agg({
-        col_comp: lambda x: ', '.join(sorted(set(x))) # Usamos set para no repetir la competencia si hay error
+        col_comp: lambda x: ', '.join(sorted(set(x)))
     }).reset_index()
     df_exo_agrupado = df_exo_agrupado.rename(columns={col_comp: 'COMPETENCIAS EXONERADAS'})
-    
-    # Mostramos la tabla en un color sutil para diferenciarla
     st.dataframe(df_exo_agrupado, hide_index=True, use_container_width=True)
     st.divider()
 
 # --- SECCIÓN DE GRÁFICOS ORGANIZADA EN PESTAÑAS ---
-
-# --- SECCIÓN DE GRÁFICOS ORGANIZADA EN PESTAÑAS ---
 st.markdown(f"**Visualizando Padrón General:** {area} | {grado} | {seccion}")
 
-# Incorporamos EXO en las leyendas y colores
-descripciones = {
-    'AD': 'AD (Logro destacado)',
-    'A': 'A (Logro Esperado)',
-    'B': 'B (En Proceso)',
-    'C': 'C (En Inicio)',
-    'EXO': 'EXO (Exonerado)'
-}
-
-colores_minedu = {
-    'AD (Logro destacado)': '#1f77b4',
-    'A (Logro Esperado)': '#2ca02c', 
-    'B (En Proceso)': '#ffcc00', 
-    'C (En Inicio)': '#d62728',
-    'EXO (Exonerado)': '#808080'
-}
-
+descripciones = {'AD': 'AD (Logro destacado)', 'A': 'A (Logro Esperado)', 'B': 'B (En Proceso)', 'C': 'C (En Inicio)', 'EXO': 'EXO (Exonerado)'}
+colores_minedu = {'AD (Logro destacado)': '#1f77b4', 'A (Logro Esperado)': '#2ca02c', 'B (En Proceso)': '#ffcc00', 'C (En Inicio)': '#d62728', 'EXO (Exonerado)': '#808080'}
 orden_niveles = ['AD (Logro destacado)', 'A (Logro Esperado)', 'B (En Proceso)', 'C (En Inicio)', 'EXO (Exonerado)']
 
-tab_gen, tab_cant, tab_pct = st.tabs([
-    "📊 Gráfico General de Niveles", 
-    "📊 Cantidades por Competencia", 
-    "📈 Distribución Porcentual"
+# ¡NUEVA PESTAÑA COMPARATIVA!
+tab_gen, tab_cant, tab_pct, tab_comp = st.tabs([
+    "📊 Gráfico General", 
+    "📊 Por Competencia", 
+    "📈 Distribución %",
+    "⚖️ Comparativo I vs II"
 ])
 
 with tab_gen:
@@ -210,13 +201,9 @@ with tab_gen:
     grafico_gen = alt.Chart(conteo_notas).mark_bar().encode(
         x=alt.X('NIVEL', sort=['AD', 'A', 'B', 'C', 'EXO'], title='Nivel de Logro', axis=alt.Axis(labelAngle=0)),
         y=alt.Y('CANTIDAD', title='Número de Estudiantes'),
-        color=alt.Color('LEYENDA', 
-                        scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), 
-                        sort=orden_niveles,
-                        legend=alt.Legend(title="Significado", orient="right")),
+        color=alt.Color('LEYENDA', scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), sort=orden_niveles, legend=alt.Legend(title="Significado")),
         tooltip=['NIVEL', 'LEYENDA', 'CANTIDAD']
     ).properties(height=350)
-
     st.altair_chart(grafico_gen, use_container_width=True)
 
 with tab_cant:
@@ -229,30 +216,16 @@ with tab_cant:
         bars = alt.Chart(chart_data).mark_bar().encode(
             x=alt.X('COMP_SHORT:N', title='COMPETENCIA', axis=alt.Axis(labelAngle=0)),
             y=alt.Y('CANTIDAD:Q', title='Cantidad'),
-            color=alt.Color('LEYENDA:N', 
-                            scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), 
-                            legend=alt.Legend(title="NIVEL DE LOGRO"),
-                            sort=orden_niveles),
+            color=alt.Color('LEYENDA:N', scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), sort=orden_niveles),
             xOffset=alt.XOffset('LEYENDA:N', sort=orden_niveles),
             tooltip=['COMP_SHORT', 'LEYENDA', 'CANTIDAD']
         )
-        
-        text = alt.Chart(chart_data).mark_text(
-            align='center',
-            baseline='bottom',
-            dy=-5,
-            fontWeight='bold'
-        ).encode(
-            x=alt.X('COMP_SHORT:N'),
-            y=alt.Y('CANTIDAD:Q'),
-            xOffset=alt.XOffset('LEYENDA:N', sort=orden_niveles),
-            text='CANTIDAD:Q'
+        text = alt.Chart(chart_data).mark_text(align='center', baseline='bottom', dy=-5, fontWeight='bold').encode(
+            x=alt.X('COMP_SHORT:N'), y=alt.Y('CANTIDAD:Q'), xOffset=alt.XOffset('LEYENDA:N', sort=orden_niveles), text='CANTIDAD:Q'
         )
-        
-        grafico_agrupado = (bars + text).properties(height=450)
-        st.altair_chart(grafico_agrupado, use_container_width=True)
+        st.altair_chart((bars + text).properties(height=450), use_container_width=True)
     else:
-        st.info("No hay datos disponibles para las competencias seleccionadas.")
+        st.info("No hay datos disponibles.")
 
 with tab_pct:
     if not df_filtrado.empty and col_comp:
@@ -260,39 +233,45 @@ with tab_pct:
         df_chart['COMP_SHORT'] = df_chart[col_comp].apply(lambda x: str(x).split('_')[-1] if '_' in str(x) else str(x))
         chart_data = df_chart.groupby(['COMP_SHORT', col_nivel]).size().reset_index(name='CANTIDAD')
         chart_data['LEYENDA'] = chart_data[col_nivel].map(descripciones)
+        chart_data['TOTAL'] = chart_data.groupby('COMP_SHORT')['CANTIDAD'].transform('sum')
+        chart_data['PORCENTAJE'] = (chart_data['CANTIDAD'] / chart_data['TOTAL']) * 100
+        chart_data['PORCENTAJE_TXT'] = chart_data['PORCENTAJE'].round(1).astype(str) + '%'
 
-        chart_data_pct = chart_data.copy()
-        chart_data_pct['TOTAL'] = chart_data_pct.groupby('COMP_SHORT')['CANTIDAD'].transform('sum')
-        chart_data_pct['PORCENTAJE'] = (chart_data_pct['CANTIDAD'] / chart_data_pct['TOTAL']) * 100
-        chart_data_pct['PORCENTAJE_TXT'] = chart_data_pct['PORCENTAJE'].round(1).astype(str) + '%'
-
-        bars_pct = alt.Chart(chart_data_pct).mark_bar().encode(
+        bars_pct = alt.Chart(chart_data).mark_bar().encode(
             x=alt.X('COMP_SHORT:N', title='COMPETENCIA', axis=alt.Axis(labelAngle=0)),
             y=alt.Y('PORCENTAJE:Q', title='Porcentaje (%)', stack="normalize", axis=alt.Axis(format='%')),
-            color=alt.Color('LEYENDA:N', 
-                            scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())),
-                            legend=alt.Legend(title="NIVEL DE LOGRO"),
-                            sort=orden_niveles),
+            color=alt.Color('LEYENDA:N', scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), sort=orden_niveles),
             tooltip=['COMP_SHORT', 'LEYENDA', 'CANTIDAD', 'PORCENTAJE_TXT']
         ).properties(height=450)
-        
         st.altair_chart(bars_pct, use_container_width=True)
     else:
-        st.info("No hay datos disponibles para las competencias seleccionadas.")
+        st.info("No hay datos disponibles.")
+
+with tab_comp:
+    if col_bimestre and bimestre_seleccionado == "Ambos (Comparativo)":
+        st.markdown("### Comparación de Niveles de Logro (I vs II Bimestre)")
+        
+        conteo_comp = df_filtrado.groupby([col_bimestre, col_nivel]).size().reset_index(name='CANTIDAD')
+        conteo_comp['LEYENDA'] = conteo_comp[col_nivel].map(descripciones)
+        
+        grafico_comparativo = alt.Chart(conteo_comp).mark_bar().encode(
+            x=alt.X(f'{col_bimestre}:N', title='Bimestre', axis=alt.Axis(labelAngle=0)),
+            y=alt.Y('CANTIDAD:Q', title='Número de Estudiantes'),
+            color=alt.Color('LEYENDA:N', scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), sort=orden_niveles, legend=alt.Legend(title="Significado")),
+            xOffset=alt.XOffset('LEYENDA:N', sort=orden_niveles),
+            tooltip=[col_bimestre, col_nivel, 'LEYENDA', 'CANTIDAD']
+        ).properties(height=400)
+        
+        st.altair_chart(grafico_comparativo, use_container_width=True)
+    else:
+        st.info("💡 Para ver el gráfico comparativo, selecciona 'Ambos (Comparativo)' en el filtro superior de Bimestre.")
 
 st.dataframe(df_filtrado.reset_index(drop=True), use_container_width=True)
 
-# --- BOTÓN DE DESCARGA (SOLO EXCEL) ---
+# --- BOTÓN DE DESCARGA ---
 st.divider()
 st.markdown("### Exportar Datos")
-
 buffer = io.BytesIO()
 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
     df_filtrado.to_excel(writer, index=False, sheet_name='Reporte_Filtrado')
-
-st.download_button(
-    label="📥 Descargar reporte en Excel (.xlsx)",
-    data=buffer.getvalue(),
-    file_name='reporte_estudiantes_filtrado.xlsx',
-    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-)
+st.download_button(label="📥 Descargar reporte en Excel (.xlsx)", data=buffer.getvalue(), file_name='reporte_estudiantes_filtrado.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
