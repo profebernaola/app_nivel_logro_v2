@@ -8,7 +8,6 @@ st.set_page_config(page_title="Panel Nivel de Logro de Aprendizaje", layout="wid
 
 @st.cache_data
 def cargar_datos():
-    # AHORA LEE EL NUEVO ARCHIVO CONSOLIDADO
     df = pd.read_csv("BD_Dashboard_Consolidado.csv")
     return df
 
@@ -33,37 +32,35 @@ df = df[df[col_nivel].isin(['AD', 'A', 'B', 'C', 'EXO'])]
 
 # --- FILTROS DEPENDIENTES EN CASCADA ---
 st.sidebar.header("Filtros de Búsqueda")
-df_temp = df.copy()
 
-# 0. Filtro de Bimestre (EL NUEVO FILTRO)
+df_base = df.copy()
+
 if col_bimestre:
-    bimestres_disponibles = sorted(list(df_temp[col_bimestre].unique()))
+    bimestres_disponibles = sorted(list(df_base[col_bimestre].unique()))
     bimestre_seleccionado = st.sidebar.selectbox("Bimestre:", ["Ambos (Comparativo)"] + bimestres_disponibles)
-    if bimestre_seleccionado != "Ambos (Comparativo)":
-        df_temp = df_temp[df_temp[col_bimestre] == bimestre_seleccionado]
 else:
     bimestre_seleccionado = "I BIMESTRE"
 
-# 1. Filtro de Área
-area = st.sidebar.selectbox("Área:", ["Todas"] + list(df_temp[col_area].unique()))
+area = st.sidebar.selectbox("Área:", ["Todas"] + list(df_base[col_area].unique()))
 if area != "Todas":
-    df_temp = df_temp[df_temp[col_area] == area]
+    df_base = df_base[df_base[col_area] == area]
 
-# 2. Filtro de Grado 
 orden_logico_grados = ['PRIMERO', 'SEGUNDO', 'TERCERO', 'CUARTO', 'QUINTO']
-grados_brutos = list(df_temp[col_grado].unique())
+grados_brutos = list(df_base[col_grado].unique())
 grados_disponibles = sorted(grados_brutos, key=lambda x: orden_logico_grados.index(x) if x in orden_logico_grados else 999)
 grado = st.sidebar.selectbox("Grado:", ["Todos"] + grados_disponibles)
 if grado != "Todos":
-    df_temp = df_temp[df_temp[col_grado] == grado]
+    df_base = df_base[df_base[col_grado] == grado]
 
-# 3. Filtro de Sección 
-secciones_disponibles = sorted(list(df_temp[col_seccion].unique()))
+secciones_disponibles = sorted(list(df_base[col_seccion].unique()))
 seccion = st.sidebar.selectbox("Sección:", ["Todas"] + secciones_disponibles)
 if seccion != "Todas":
-    df_temp = df_temp[df_temp[col_seccion] == seccion]
+    df_base = df_base[df_base[col_seccion] == seccion]
 
-# 4. Filtro de Competencias
+df_temp = df_base.copy()
+if bimestre_seleccionado != "Ambos (Comparativo)" and col_bimestre:
+    df_temp = df_temp[df_temp[col_bimestre] == bimestre_seleccionado]
+
 if col_comp:
     competencias_lista = sorted(list(df_temp[col_comp].dropna().unique()))
     competencias = st.sidebar.multiselect("Competencias:", competencias_lista, default=competencias_lista)
@@ -90,7 +87,6 @@ st.divider()
 
 # --- RESUMEN DEL NIVEL ---
 st.markdown("### Resumen del NIVEL")
-
 col_nombres, c1, c2, c3, c4, c5 = st.columns([1.5, 1, 1, 1, 1, 1])
 
 total_estudiantes_unicos = df_filtrado[col_estudiante].nunique()
@@ -107,76 +103,65 @@ c3.metric("En Proceso (B)", count_b)
 c4.metric("En Inicio (C)", count_c)
 c5.metric("Exonerado (EXO)", count_exo)
 
-espacio_superior = "<div style='height: 15px;'></div>"
-titulo_visible = "<div style='font-size: 0.95rem; font-weight: 600; color: #31333F; margin-bottom: 5px;'>ÁREA Y COMPETENCIA</div>"
-titulo_invisible = "<div style='font-size: 0.95rem; margin-bottom: 5px;'>&nbsp;</div>"
-
-col_nombres.markdown(espacio_superior, unsafe_allow_html=True)
-col_nombres.markdown(titulo_visible, unsafe_allow_html=True)
-
-for col in [c1, c2, c3, c4, c5]:
-    col.markdown(espacio_superior, unsafe_allow_html=True)
-    col.markdown(titulo_invisible, unsafe_allow_html=True)
-
-if col_comp and not df_filtrado.empty:
-    competencias_presentes = sorted(df_filtrado[col_comp].dropna().unique())
-    html_nombres, html_ad, html_a, html_b, html_c, html_exo = "", "", "", "", "", ""
-    
-    for comp in competencias_presentes:
-        df_comp = df_filtrado[df_filtrado[col_comp] == comp]
-        area_name = df_comp[col_area].iloc[0] if not df_comp.empty and col_area in df_comp.columns else "Área"
-        comp_name = str(comp).split('_')[-1] if '_' in str(comp) else str(comp)
-        
-        row_style = "font-size: 0.90rem; color: #4F4F4F; margin-top: 4px; height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
-        
-        html_nombres += f"<div style='{row_style} font-weight: 600;'>{area_name} ({comp_name})</div>"
-        
-        cant_ad = len(df_comp[df_comp[col_nivel] == 'AD'])
-        cant_a = len(df_comp[df_comp[col_nivel] == 'A'])
-        cant_b = len(df_comp[df_comp[col_nivel] == 'B'])
-        cant_c = len(df_comp[df_comp[col_nivel] == 'C'])
-        cant_exo = len(df_comp[df_comp[col_nivel] == 'EXO'])
-        
-        html_ad += f"<div style='{row_style}'>{comp_name}={cant_ad}</div>" if cant_ad > 0 else f"<div style='{row_style}'>-</div>"
-        html_a += f"<div style='{row_style}'>{comp_name}={cant_a}</div>" if cant_a > 0 else f"<div style='{row_style}'>-</div>"
-        html_b += f"<div style='{row_style}'>{comp_name}={cant_b}</div>" if cant_b > 0 else f"<div style='{row_style}'>-</div>"
-        html_c += f"<div style='{row_style}'>{comp_name}={cant_c}</div>" if cant_c > 0 else f"<div style='{row_style}'>-</div>"
-        html_exo += f"<div style='{row_style}'>{comp_name}={cant_exo}</div>" if cant_exo > 0 else f"<div style='{row_style}'>-</div>"
-
-    col_nombres.markdown(html_nombres, unsafe_allow_html=True)
-    c1.markdown(html_ad, unsafe_allow_html=True)
-    c2.markdown(html_a, unsafe_allow_html=True)
-    c3.markdown(html_b, unsafe_allow_html=True)
-    c4.markdown(html_c, unsafe_allow_html=True)
-    c5.markdown(html_exo, unsafe_allow_html=True)
-
 st.divider()
 
-# --- ESTUDIANTES QUE REQUIEREN APOYO (C) ---
-st.markdown("#### Estudiantes que requieren apoyo (C)")
-df_apoyo = df_filtrado[df_filtrado[col_nivel] == 'C']
+# --- TABLAS DE APOYO, EXO Y ALERTA TEMPRANA CON EXPANSORES ---
+col_t1, col_t2 = st.columns(2)
 
-if not df_apoyo.empty:
-    df_agrupado = df_apoyo.groupby(col_estudiante).agg({
-        col_comp: lambda x: ', '.join(sorted(set(x)))
-    }).reset_index()
-    df_agrupado = df_agrupado.rename(columns={col_comp: 'COMPETENCIAS A MEJORAR'})
-    st.dataframe(df_agrupado, hide_index=True, use_container_width=True)
-else:
-    st.info("No hay estudiantes con calificación 'C' en esta selección.")
+with col_t1:
+    # Expansor 1: Apoyo Focalizado
+    with st.expander("🟡 Ver estudiantes que requieren Apoyo Focalizado (2 a más 'C')"):
+        df_apoyo = df_filtrado[df_filtrado[col_nivel] == 'C']
+        if not df_apoyo.empty:
+            df_agrupado = df_apoyo.groupby(col_estudiante).agg(
+                CANTIDAD_C=(col_comp, 'count'),
+                COMPETENCIAS_A_MEJORAR=(col_comp, lambda x: ', '.join(sorted(set(x))))
+            ).reset_index()
+            
+            df_apoyo_focalizado = df_agrupado[df_agrupado['CANTIDAD_C'] >= 2]
+            
+            if not df_apoyo_focalizado.empty:
+                df_mostrar = df_apoyo_focalizado[[col_estudiante, 'COMPETENCIAS_A_MEJORAR']]
+                st.dataframe(df_mostrar, hide_index=True, use_container_width=True)
+            else:
+                st.success("✅ Ningún estudiante requiere apoyo focalizado (2 a más 'C') en esta selección.")
+        else:
+            st.success("✅ No hay estudiantes con calificación 'C' en esta selección.")
+
+    # Expansor 2: Exonerados
+    with st.expander("⚪ Ver Estudiantes Exonerados (EXO)"):
+        df_exo = df_filtrado[df_filtrado[col_nivel] == 'EXO']
+        if not df_exo.empty:
+            df_exo_agrupado = df_exo.groupby(col_estudiante).agg({col_comp: lambda x: ', '.join(sorted(set(x)))}).reset_index()
+            df_exo_agrupado = df_exo_agrupado.rename(columns={col_comp: 'COMPETENCIAS EXONERADAS'})
+            st.dataframe(df_exo_agrupado, hide_index=True, use_container_width=True)
+        else:
+            st.info("No hay estudiantes exonerados en esta selección.")
+
+with col_t2:
+    # Expansor 3: Riesgo Crónico
+    if bimestre_seleccionado == "I BIMESTRE":
+        with st.expander("🔴 Ver Alerta de Riesgo Crónico"):
+            st.info("💡 Esta alerta se activa a partir del II Bimestre o en la vista Comparativa para identificar patrones de estancamiento.")
+    else:
+        with st.expander("🔴 Ver Alerta de Riesgo Crónico (C en I y II Bimestre)"):
+            if col_bimestre and area != "Todas" and grado != "Todos" and seccion != "Todas":
+                df_b1_c = df_base[(df_base[col_bimestre] == 'I BIMESTRE') & (df_base[col_nivel] == 'C')]
+                df_b2_c = df_base[(df_base[col_bimestre] == 'II BIMESTRE') & (df_base[col_nivel] == 'C')]
+                
+                df_cronicos = pd.merge(df_b1_c, df_b2_c, on=[col_estudiante, col_comp])
+                
+                if not df_cronicos.empty:
+                    df_cronicos_agrupado = df_cronicos.groupby(col_estudiante).agg({col_comp: lambda x: ', '.join(sorted(set(x)))}).reset_index()
+                    df_cronicos_agrupado = df_cronicos_agrupado.rename(columns={col_comp: 'COMPETENCIA EN RIESGO CRÓNICO'})
+                    st.error("⚠️ Atención: Estudiantes estancados en nivel de inicio (C) desde el I Bimestre.")
+                    st.dataframe(df_cronicos_agrupado, hide_index=True, use_container_width=True)
+                else:
+                    st.success("✅ ¡Excelentes noticias! Ningún estudiante repite 'C' en ambos bimestres para esta selección.")
+            else:
+                st.info("Para ver el análisis de Riesgo Crónico, debes seleccionar un Área, Grado y Sección específica.")
 
 st.divider()
-
-# --- ESTUDIANTES EXONERADOS (EXO) ---
-df_exo = df_filtrado[df_filtrado[col_nivel] == 'EXO']
-if not df_exo.empty:
-    st.markdown("#### Estudiantes Exonerados (EXO)")
-    df_exo_agrupado = df_exo.groupby(col_estudiante).agg({
-        col_comp: lambda x: ', '.join(sorted(set(x)))
-    }).reset_index()
-    df_exo_agrupado = df_exo_agrupado.rename(columns={col_comp: 'COMPETENCIAS EXONERADAS'})
-    st.dataframe(df_exo_agrupado, hide_index=True, use_container_width=True)
-    st.divider()
 
 # --- SECCIÓN DE GRÁFICOS ORGANIZADA EN PESTAÑAS ---
 st.markdown(f"**Visualizando Padrón General:** {area} | {grado} | {seccion}")
@@ -185,12 +170,12 @@ descripciones = {'AD': 'AD (Logro destacado)', 'A': 'A (Logro Esperado)', 'B': '
 colores_minedu = {'AD (Logro destacado)': '#1f77b4', 'A (Logro Esperado)': '#2ca02c', 'B (En Proceso)': '#ffcc00', 'C (En Inicio)': '#d62728', 'EXO (Exonerado)': '#808080'}
 orden_niveles = ['AD (Logro destacado)', 'A (Logro Esperado)', 'B (En Proceso)', 'C (En Inicio)', 'EXO (Exonerado)']
 
-# ¡NUEVA PESTAÑA COMPARATIVA!
-tab_gen, tab_cant, tab_pct, tab_comp = st.tabs([
+tab_gen, tab_cant, tab_pct, tab_comp, tab_calor = st.tabs([
     "📊 Gráfico General", 
     "📊 Por Competencia", 
     "📈 Distribución %",
-    "⚖️ Comparativo I vs II"
+    "⚖️ Comparativo I vs II",
+    "🔥 Mapa de Calor del Salón"
 ])
 
 with tab_gen:
@@ -250,7 +235,6 @@ with tab_pct:
 with tab_comp:
     if col_bimestre and bimestre_seleccionado == "Ambos (Comparativo)":
         st.markdown("### Comparación de Niveles de Logro (I vs II Bimestre)")
-        
         conteo_comp = df_filtrado.groupby([col_bimestre, col_nivel]).size().reset_index(name='CANTIDAD')
         conteo_comp['LEYENDA'] = conteo_comp[col_nivel].map(descripciones)
         
@@ -261,15 +245,48 @@ with tab_comp:
             xOffset=alt.XOffset('LEYENDA:N', sort=orden_niveles),
             tooltip=[col_bimestre, col_nivel, 'LEYENDA', 'CANTIDAD']
         ).properties(height=400)
-        
         st.altair_chart(grafico_comparativo, use_container_width=True)
     else:
         st.info("💡 Para ver el gráfico comparativo, selecciona 'Ambos (Comparativo)' en el filtro superior de Bimestre.")
 
-st.dataframe(df_filtrado.reset_index(drop=True), use_container_width=True)
+with tab_calor:
+    if not df_filtrado.empty and col_comp:
+        st.markdown("### Radiografía del Salón (Mapa de Calor)")
+        st.caption("Analiza rápidamente el desempeño de cada estudiante. Pasa el cursor por los recuadros para ver detalles.")
+        
+        df_heat = df_filtrado.copy()
+        if bimestre_seleccionado == "Ambos (Comparativo)":
+            df_heat['EJE_X'] = df_heat[col_bimestre] + " - " + df_heat[col_comp].apply(lambda x: str(x).split('_')[-1])
+        else:
+            df_heat['EJE_X'] = df_heat[col_comp].apply(lambda x: str(x).split('_')[-1])
 
-# --- BOTÓN DE DESCARGA ---
+        df_heat['LEYENDA'] = df_heat[col_nivel].map(descripciones)
+
+        base_heatmap = alt.Chart(df_heat).encode(
+            x=alt.X('EJE_X:N', title='Competencias', axis=alt.Axis(labelAngle=-45)),
+            y=alt.Y('ESTUDIANTE:N', title='Estudiantes', sort=alt.EncodingSortField(field="ESTUDIANTE", order="ascending"))
+        )
+
+        heatmap = base_heatmap.mark_rect(stroke='white', strokeWidth=1).encode(
+            color=alt.Color('LEYENDA:N', scale=alt.Scale(domain=list(colores_minedu.keys()), range=list(colores_minedu.values())), legend=alt.Legend(title="Nivel de Logro"), sort=orden_niveles),
+            tooltip=['ESTUDIANTE', col_bimestre, 'EJE_X', 'NIVEL_DE_LOGRO']
+        )
+        
+        text_heatmap = base_heatmap.mark_text(baseline='middle').encode(
+            text='NIVEL_DE_LOGRO:N',
+            color=alt.value('white')
+        )
+
+        grafico_calor = (heatmap + text_heatmap).properties(height=max(400, len(df_heat['ESTUDIANTE'].unique()) * 25))
+        st.altair_chart(grafico_calor, use_container_width=True)
+    else:
+        st.info("Selecciona un Área y un Grado para ver el mapa de calor.")
+
 st.divider()
+
+with st.expander("Ver Base de Datos Completa"):
+    st.dataframe(df_filtrado.reset_index(drop=True), use_container_width=True)
+
 st.markdown("### Exportar Datos")
 buffer = io.BytesIO()
 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
