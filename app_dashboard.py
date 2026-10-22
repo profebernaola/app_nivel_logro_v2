@@ -375,3 +375,4 @@ elif modo_vista == "👤 Perfil Individual":
             file_name=f'Ficha_{estudiante_seleccionado.replace(" ", "_")}.xlsx', 
             mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
+        # Forzar reinicio de memoria
