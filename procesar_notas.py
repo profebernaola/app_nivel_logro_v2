@@ -52,37 +52,41 @@ def extraer_datos_excel(file_path, sheet_name, bimestre_label):
                         'AREA': area_clean,
                         'COMPETENCIA': comp_combined,
                         'NIVEL_DE_LOGRO': nota_limpia,
-                        'BIMESTRE': bimestre_label # <-- ¡EL NUEVO DATO ESTRELLA!
+                        'BIMESTRE': bimestre_label
                     })
                     
     return pd.DataFrame(data_rows)
 
 def procesar_excel_a_csv():
-    # 1. Configurar los dos archivos
+    # 1. Configurar los tres archivos
     file_1 = "CONSOLIDADO NIVEL DEL LOGRO DE LOS APRENDIZAJE - I BIMESTRE - 2026.xlsx"
     sheet_1 = "DATA_I_BIMESTRE_2026"
     
     file_2 = "CONSOLIDADO NIVEL DEL LOGRO DE LOS APRENDIZAJE - II BIMESTRE - 2026.xlsx"
     sheet_2 = "DATA_II_BIMESTRE_2026"
     
-    # 2. Extraer datos de ambos
+    file_3 = "CONSOLIDADO NIVEL DEL LOGRO DE LOS APRENDIZAJE - III BIMESTRE - 2026.xlsx"
+    sheet_3 = "DATA_III_BIMESTRE_2026"
+    
+    # 2. Extraer datos de los tres
     df_bim1 = extraer_datos_excel(file_1, sheet_1, "I BIMESTRE")
     df_bim2 = extraer_datos_excel(file_2, sheet_2, "II BIMESTRE")
+    df_bim3 = extraer_datos_excel(file_3, sheet_3, "III BIMESTRE")
     
-    # 3. Unir todo en una sola super-tabla
-    df_final = pd.concat([df_bim1, df_bim2], ignore_index=True)
+    # 3. Unir todo en la base de datos maestra
+    df_final = pd.concat([df_bim1, df_bim2, df_bim3], ignore_index=True)
     
     if df_final.empty:
         print("Error: No se procesó ningún dato. Verifica los nombres de tus archivos.")
         return
 
-    # 4. Generar el nuevo archivo consolidado
+    # 4. Actualizar el archivo consolidado
     output_csv = "BD_Dashboard_Consolidado.csv"
     df_final.to_csv(output_csv, index=False, encoding='utf-8-sig')
     
-    print(f"\n¡Éxito total! Se procesaron {len(df_final)} calificaciones uniendo ambos bimestres.")
-    print(f"Se ha creado el archivo maestro: '{output_csv}'")
+    print(f"\n¡Éxito total! Se procesaron {len(df_final)} calificaciones uniendo los TRES bimestres.")
+    print(f"Se ha actualizado el archivo maestro: '{output_csv}'")
 
 if __name__ == "__main__":
-    print("--- INICIANDO PROCESAMIENTO DE BIMESTRES ---")
+    print("--- INICIANDO PROCESAMIENTO DE 3 BIMESTRES ---")
     procesar_excel_a_csv()
